@@ -11,45 +11,46 @@ func TestGetAPIKey(t *testing.T) {
 		name          string
 		headers       http.Header
 		expectedKey   string
-		expectedError error
+		expectedErr   error
+		errContains   string // Used to check dynamic text errors safely
 	}{
 		{
 			name: "Valid ApiKey Header",
 			headers: http.Header{
-				"Authorization": []string{"ApiKey my-secret-token-123"},
+				"Authorization": []string{"ApiKey secret-token-12345"},
 			},
-			expectedKey:   "my-secret-token-123",
-			expectedError: nil,
+			expectedKey: "secret-token-12345",
+			expectedErr: nil,
 		},
 		{
-			name:          "Missing Authorization Header",
-			headers:       http.Header{},
-			expectedKey:   "",
-			expectedError: ErrNoAuthHeaderIncluded,
+			name:        "Missing Authorization Header",
+			headers:     http.Header{},
+			expectedKey: "",
+			expectedErr: ErrNoAuthHeaderIncluded,
+		},
+		{
+			name: "Empty Authorization String",
+			headers: http.Header{
+				"Authorization": []string{""},
+			},
+			expectedKey: "",
+			expectedErr: ErrNoAuthHeaderIncluded,
 		},
 		{
 			name: "Malformed Header - Wrong Prefix",
 			headers: http.Header{
-				"Authorization": []string{"Bearer my-secret-token-123"},
+				"Authorization": []string{"Bearer secret-token-12345"},
 			},
-			expectedKey:   "",
-			expectedError: errors.New("malformed authorization header"),
+			expectedKey: "",
+			errContains: "malformed authorization header",
 		},
 		{
 			name: "Malformed Header - Missing Token",
 			headers: http.Header{
 				"Authorization": []string{"ApiKey"},
 			},
-			expectedKey:   "",
-			expectedError: errors.New("malformed authorization header"),
-		},
-		{
-			name: "Malformed Header - Completely Empty String",
-			headers: http.Header{
-				"Authorization": []string{""},
-			},
-			expectedKey:   "",
-			expectedError: ErrNoAuthHeaderIncluded,
+			expectedKey: "",
+			errContains: "malformed authorization header",
 		},
 	}
 
@@ -57,19 +58,23 @@ func TestGetAPIKey(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			gotKey, gotErr := GetAPIKey(tt.headers)
 
-			// Check error behavior
-			if tt.expectedError != nil {
-				if gotErr == nil {
-					t.Fatalf("expected error %q, but got nil", tt.expectedError)
+			// 1. Assert on the error type/value
+			if tt.expectedErr != nil {
+				if !errors.Is(gotErr, tt.expectedErr) {
+					t.Fatalf("expected error sentinel %v, got %v", tt.expectedErr, gotErr)
 				}
-				if gotErr.Error() != tt.expectedError.Error() {
-					t.Errorf("expected error %q, got %q", tt.expectedError, gotErr)
+			} else if tt.errContains != "" {
+				if gotErr == nil {
+					t.Fatalf("expected error containing %q, but got nil", tt.errContains)
+				}
+				if gotErr.Error() != tt.errContains {
+					t.Fatalf("expected error string %q, got %q", tt.errContains, gotErr.Error())
 				}
 			} else if gotErr != nil {
-				t.Fatalf("expected no error, but got %q", gotErr)
+				t.Fatalf("expected no error, but got %v", gotErr)
 			}
 
-			// Check returned API key
+			// 2. Assert on the returned API key
 			if gotKey != tt.expectedKey {
 				t.Errorf("expected key %q, got %q", tt.expectedKey, gotKey)
 			}
